@@ -1,0 +1,6 @@
+addkeysection "AnimationKeys" AnimationKeys
+addmenukey "Speed up" SpeedUp
+addmenukey "Slow down" SlowDown
+
+alias SpeedUp "netevent increase"
+alias SlowDown "netevent decrease"

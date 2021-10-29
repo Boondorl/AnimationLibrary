@@ -6,16 +6,23 @@ class AnimMod : Inventory
 	
 	double modifier;
 	
-	property Modifier : modifier;
-	
 	Default
 	{
-		AnimMod.Modifier 1;
+		+NOBLOCKMAP
+		+NOSECTOR
+		+INVENTORY.UNDROPPABLE
+	}
+	
+	override void BeginPlay()
+	{
+		super.BeginPlay();
+		
+		modifier = 1;
 	}
 	
 	override void Tick() {}
 	
-	// Custom loop that speeds up animations at all times
+	// Custom loop that changes animations at all times
 	override void DoEffect()
 	{
 		if (!owner)
@@ -31,32 +38,34 @@ class AnimMod : Inventory
 		if (CheckNewSequence(owner.curState, prevStates[0]))
 			main.SetModifier(modifier);
 			
-		main.Modify();
+		bool res = main.Modify();
 		
 		if (owner)
-			prevStates[0] = owner.curState;
-		
-		if (owner && owner.player)
 		{
-			UpdatePSprites();
-			
-			for (uint i = 1; i < anim.Count(); ++i)
+			if (res)
+				prevStates[0] = owner.curState;
+		
+			if (owner.player)
 			{
-				let layer = anim.layers[i];
-				if (!layer || !layer.psp)
-					continue;
-					
-				if (CheckNewSequence(layer.psp.curState, prevStates[i]))
-					layer.SetModifier(modifier);
-					
-				layer.Modify();
-				if (layer.psp)
-					prevStates[i] = layer.psp.CurState;
-				
 				UpdatePSprites();
+				
+				for (uint i = 1; i < anim.Count(); ++i)
+				{
+					let layer = anim.layers[i];
+					if (!layer || !layer.psp)
+						continue;
+						
+					if (CheckNewSequence(layer.psp.curState, prevStates[i]))
+						layer.SetModifier(modifier);
+						
+					if (layer.Modify() && layer.psp)
+						prevStates[i] = layer.psp.CurState;
+					
+					UpdatePSprites();
+				}
+				
+				RemovePSprites();
 			}
-			
-			RemovePSprites();
 		}
 	}
 	
@@ -92,7 +101,7 @@ class AnimMod : Inventory
 		if (!cur)
 			return false;
 			
-		return !prev || (prev != cur && prev.DistanceTo(cur) != 1);
+		return !prev || (prev != cur && (prev.DistanceTo(cur) != 1 || prev.NextState != cur));
 	}
 }
 
@@ -101,10 +110,7 @@ class TestHandler : EventHandler
 	override void WorldThingSpawned(WorldEvent e)
 	{
 		if (e.thing && ((e.thing.bIsMonster && e.thing.bShootable) || e.thing.player))
-		{
-			if (!e.thing.FindInventory("AnimMod"))
-				e.thing.GiveInventoryType("AnimMod");
-		}
+			e.thing.GiveInventory("AnimMod", 1);
 	}
 	
 	override void NetworkProcess(ConsoleEvent e)

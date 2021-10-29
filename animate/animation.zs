@@ -56,10 +56,10 @@ class AnimationLayer : Object play
 		roundUp = 0;
 	}
 	
-	void Modify()
+	bool Modify()
 	{
 		if (modifier == 1)
-			return;
+			return true;
 			
 		State thisState;
 		if (psp)
@@ -67,126 +67,122 @@ class AnimationLayer : Object play
 		else
 			thisState = owner.CurState;
 		
-		// Don't modify if we're in a freeze state
-		if (!thisState || thisState.tics == -1)
-			return;
-			
-		if (--timer <= 0)
-		{
-			double interval;
-			if (modifier > 1)
-				interval = modifier;
-			else
-			{
-				int ticsLeft = round(tics * (1 - modifier));
-				if (ticsLeft > 0)
-					interval = (tics-ticsLeft)*1. / ticsLeft;
-			}
+		// Don't modify if the owner is frozen or time timer is still ticking
+		if (!thisState || thisState.tics == -1 || owner.IsFrozen())
+			return false;
 		
-			int realInterval = ceil(interval);
-			if (modifier > 1)
-			{
-				int trunc = int(interval);
-				if (trunc < interval)
-				{
-					roundUp += (interval-trunc);
-					
-					if (roundUp < 1)
-						realInterval = trunc;
-					else
-						--roundUp;
-				}
-			}
+		if (--timer > 0)
+			return true;
 			
-			timer = realInterval;
-			
-			int cap = Animation.GetSequenceLength(thisState) - 1; // Don't allow 0-length animations
-			int mod = 1;
-			if (!modifier)
-				mod = cap;
-			else
+		double interval;
+		if (modifier > 1)
+			interval = modifier;
+		else
+		{
+			int ticsLeft = round(tics * (1 - modifier));
+			if (ticsLeft > 0)
+				interval = double(tics-ticsLeft) / ticsLeft;
+		}
+	
+		int realInterval = ceil(interval);
+		if (modifier > 1)
+		{
+			int trunc = int(interval);
+			if (trunc < interval)
 			{
-				if (modifier > 1)
-					mod = realInterval - 1;	
-				else if (interval < 1)
-				{
-					mod = ceil(1/interval);
-					if (mod > cap)
-						mod = cap;
-				}
-			}
-			
-			if (modifier > 1)
-			{
-				if (psp)
-					psp.tics += mod;
+				roundUp += (interval-trunc);
+				
+				if (roundUp < 1)
+					realInterval = trunc;
 				else
-					owner.tics += mod;
-			}
-			else
-			{
-				if (psp)
-				{
-					if (psp.tics > mod)
-						psp.tics -= mod;
-					else
-					{
-						int tempMod = mod;
-						do
-						{
-							int tempTics = min(tempMod, psp.tics);
-							tempMod -= tempTics;
-							psp.tics -= tempTics;
-							if (psp.tics <= 0)
-							{
-								State prev = psp.CurState;
-								State next = psp.CurState.NextState;
-								
-								psp.SetState(next);
-								if (!ContinueAnimating(next, prev, true))
-									return;
-							}
-						} while (tempMod > 0);
-					}
-				}
-				else
-				{
-					if (owner.tics > mod)
-						owner.tics -= mod;
-					else
-					{
-						int tempMod = mod;
-						do
-						{
-							int tempTics = min(tempMod, owner.tics);
-							tempMod -= tempTics;
-							owner.tics -= tempTics;
-							if (owner.tics <= 0)
-							{
-								State prev = owner.CurState;
-								State next = owner.CurState.NextState;
-								
-								owner.SetState(next);
-								if (!ContinueAnimating(next, prev))
-									return;
-							}
-						} while (tempMod > 0);
-					}
-				}
+					--roundUp;
 			}
 		}
-	}
-	
-	private bool ContinueAnimating(State current, State prev, bool isPSprite = false)
-	{
-		if (!owner || (isPSprite && !psp)
-			|| !current || current.tics == -1 || current == start
-			|| (prev && prev.DistanceTo(current) != 1))
+		
+		timer = realInterval;
+		
+		int cap = Animation.GetSequenceLength(thisState) - 1; // Don't allow 0-length animations
+		int mod = 1;
+		if (!modifier)
+			mod = cap;
+		else
 		{
-			return false;
+			if (modifier > 1)
+				mod = realInterval - 1;	
+			else if (interval < 1)
+			{
+				mod = ceil(1/interval);
+				if (mod > cap)
+					mod = cap;
+			}
+		}
+		
+		if (modifier > 1)
+		{
+			if (psp)
+				psp.tics += mod;
+			else
+				owner.tics += mod;
+		}
+		else
+		{
+			if (psp)
+			{
+				if (psp.tics > mod)
+					psp.tics -= mod;
+				else
+				{
+					int tempMod = mod;
+					do
+					{
+						int tempTics = min(tempMod, psp.tics);
+						tempMod -= tempTics;
+						psp.tics -= tempTics;
+						if (psp.tics <= 0)
+						{
+							State prev = psp.CurState;
+							psp.SetState(psp.CurState.NextState);
+							if (!psp || !ContinueAnimating(psp.CurState, prev))
+							{
+								Reset();
+								return false;
+							}
+						}
+					} while (tempMod > 0);
+				}
+			}
+			else
+			{
+				if (owner.tics > mod)
+					owner.tics -= mod;
+				else
+				{
+					int tempMod = mod;
+					do
+					{
+						int tempTics = min(tempMod, owner.tics);
+						tempMod -= tempTics;
+						owner.tics -= tempTics;
+						if (owner.tics <= 0)
+						{
+							State prev = owner.CurState;
+							if (!owner.SetState(owner.CurState.NextState) || !ContinueAnimating(owner.CurState, prev))
+							{
+								Reset();
+								return false;
+							}
+						}
+					} while (tempMod > 0);
+				}
+			}
 		}
 		
 		return true;
+	}
+	
+	private bool ContinueAnimating(State current, State prev)
+	{
+		return current && current.tics != -1 && current != start && (!prev || prev.DistanceTo(current) == 1);
 	}
 }
 
@@ -210,7 +206,6 @@ struct Animation play
 		layer.psp = psp;
 		
 		layer.Reset();
-		
 		layers.Push(layer);
 		
 		return layer;
@@ -242,9 +237,9 @@ struct Animation play
 		return layers.Size();
 	}
 	
-	static int GetSequenceLength(State start)
+	static int GetSequenceLength(State start, State end = null)
 	{
-		if (!start)
+		if (!start || start == end)
 			return 0;
 			
 		int total;
@@ -257,7 +252,7 @@ struct Animation play
 								
 			prevState = thisState;
 			thisState = thisState.NextState;
-		} while (thisState && prevState.DistanceTo(thisState) == 1);
+		} while (thisState && thisState != end && prevState.DistanceTo(thisState) == 1);
 		
 		return total;
 	}

@@ -8,19 +8,26 @@ class AnimMod : Inventory
 	
 	Default
 	{
+		FloatBobPhase 0;
+		Radius 0;
+		Height 0;
+		
+		+SYNCHRONIZED
 		+NOBLOCKMAP
 		+NOSECTOR
 		+INVENTORY.UNDROPPABLE
 	}
 	
-	override void BeginPlay()
-	{
-		super.BeginPlay();
-		
-		modifier = 1;
-	}
+	override void PostBeginPlay() {}
+	
+	override void MarkPrecacheSounds() {}
 	
 	override void Tick() {}
+	
+	override void BeginPlay()
+	{
+		modifier = 1;
+	}
 	
 	// Custom loop that changes animations at all times
 	override void DoEffect()
@@ -107,10 +114,33 @@ class AnimMod : Inventory
 
 class TestHandler : EventHandler
 {
+	private Array<AnimMod> mods;
+	private double modifier;
+	
+	override void OnRegister()
+	{
+		modifier = 1;
+	}
+	
 	override void WorldThingSpawned(WorldEvent e)
 	{
 		if (e.thing && ((e.thing.bIsMonster && e.thing.bShootable) || e.thing.player))
+		{
 			e.thing.GiveInventory("AnimMod", 1);
+			let am = AnimMod(e.thing.FindInventory("AnimMod"));
+			if (am)
+			{
+				am.modifier = modifier;
+				mods.Push(am);
+			}
+		}
+	}
+	
+	override void WorldThingDestroyed(WorldEvent e)
+	{
+		let am = AnimMod(e.thing);
+		if (am)
+			mods.Delete(mods.Find(am));
 	}
 	
 	override void NetworkProcess(ConsoleEvent e)
@@ -120,61 +150,42 @@ class TestHandler : EventHandler
 		
 		if (e.Name ~== "increase")
 		{
-			ThinkerIterator it = ThinkerIterator.Create("AnimMod", Thinker.STAT_INVENTORY);
-			AnimMod anim;
+			if (modifier > 1)
+				modifier -= 0.5;
+			else if (modifier > 0.25)
+				modifier -= 0.2;
 			
-			double mod;
-			while (anim = AnimMod(it.Next()))
-			{
-				if (!anim)
-					continue;
-				
-				if (anim.modifier > 1)
-					anim.modifier -= 0.5;
-				else if (anim.modifier > 0.25)
-					anim.modifier -= 0.2;
-				
-				mod = anim.modifier;
-				
-				UpdateModifiers(anim);
-			}
+			UpdateModifiers();
 			
-			Console.printf("Animation modifier: %.2f", mod);
+			console.printf("Animation modifier: %.2f", modifier);
 		}
 		else if (e.Name ~== "decrease")
 		{
-			ThinkerIterator it = ThinkerIterator.Create("AnimMod", Thinker.STAT_INVENTORY);
-			AnimMod anim;
+			if (modifier < 1)
+				modifier += 0.2;
+			else if (modifier < 3)
+				modifier += 0.5;
 			
-			double mod;
-			while (anim = AnimMod(it.Next()))
-			{
-				if (!anim)
-					continue;
-					
-				if (anim.modifier < 1)
-					anim.modifier += 0.2;
-				else if (anim.modifier < 3)
-					anim.modifier += 0.5;
-				
-				mod = anim.modifier;
-				
-				UpdateModifiers(anim);
-			}
+			UpdateModifiers();
 			
-			Console.printf("Animation modifier: %.2f", mod);
+			console.printf("Animation modifier: %.2f", modifier);
 		}
 	}
 	
-	private void UpdateModifiers(AnimMod a)
+	private void UpdateModifiers()
 	{
-		if (!a)
-			return;
-			
-		for (uint i = 0; i < a.anim.Count(); ++i)
+		for (uint i = 0; i < mods.Size(); ++i)
 		{
-			if (a.anim.layers[i])
-				a.anim.layers[i].ChangeModifier(a.modifier);
+			let a = mods[i];
+			if (!a)
+				continue;
+			
+			a.modifier = modifier;
+			for (uint j = 0; j < a.anim.Count(); ++j)
+			{
+				if (a.anim.layers[j])
+					a.anim.layers[j].ChangeModifier(a.modifier);
+			}
 		}
 	}
 }

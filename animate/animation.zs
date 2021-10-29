@@ -58,7 +58,7 @@ class AnimationLayer : Object play
 	
 	bool Modify()
 	{
-		if (modifier == 1)
+		if (modifier ~== 1)
 			return true;
 			
 		State thisState;
@@ -101,9 +101,9 @@ class AnimationLayer : Object play
 		
 		timer = realInterval;
 		
-		int cap = Animation.GetSequenceLength(thisState) - 1; // Don't allow 0-length animations
+		int cap = Animation.GetSequenceLength(thisState);
 		int mod = 1;
-		if (!modifier)
+		if (modifier ~== 0)
 			mod = cap;
 		else
 		{

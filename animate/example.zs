@@ -115,11 +115,13 @@ class AnimMod : Inventory
 class TestHandler : EventHandler
 {
 	private Array<AnimMod> mods;
-	private double modifier;
+	private transient CVar svMod;
+	private double prevMod;
 	
 	override void OnRegister()
 	{
-		modifier = 1;
+		svMod = CVar.GetCVar("us_modifier");
+		prevMod = svMod.GetFloat();
 	}
 	
 	override void WorldThingSpawned(WorldEvent e)
@@ -130,7 +132,10 @@ class TestHandler : EventHandler
 			let am = AnimMod(e.thing.FindInventory("AnimMod"));
 			if (am)
 			{
-				am.modifier = modifier;
+				if (!svMod)
+					svMod = CVar.GetCVar("us_modifier");
+				
+				am.modifier = svMod.GetFloat();
 				mods.Push(am);
 			}
 		}
@@ -143,36 +148,19 @@ class TestHandler : EventHandler
 			mods.Delete(mods.Find(am));
 	}
 	
-	override void NetworkProcess(ConsoleEvent e)
+	override void WorldTick()
 	{
-		if (e.Player != net_arbitrator)
-			return;
+		if (!svMod)
+			svMod = CVar.GetCVar("us_modifier");
 		
-		if (e.Name ~== "increase")
-		{
-			if (modifier > 1)
-				modifier -= 0.5;
-			else if (modifier > 0.25)
-				modifier -= 0.2;
-			
-			UpdateModifiers();
-			
-			console.printf("Animation modifier: %.2f", modifier);
-		}
-		else if (e.Name ~== "decrease")
-		{
-			if (modifier < 1)
-				modifier += 0.2;
-			else if (modifier < 3)
-				modifier += 0.5;
-			
-			UpdateModifiers();
-			
-			console.printf("Animation modifier: %.2f", modifier);
-		}
+		double modifier = svMod.GetFloat();
+		if (!(modifier ~== prevMod))
+			UpdateModifiers(modifier);
+		
+		prevMod = modifier;	
 	}
 	
-	private void UpdateModifiers()
+	private void UpdateModifiers(double mod)
 	{
 		for (uint i = 0; i < mods.Size(); ++i)
 		{
@@ -180,12 +168,14 @@ class TestHandler : EventHandler
 			if (!a)
 				continue;
 			
-			a.modifier = modifier;
+			a.modifier = mod;
 			for (uint j = 0; j < a.anim.Count(); ++j)
 			{
 				if (a.anim.layers[j])
 					a.anim.layers[j].ChangeModifier(a.modifier);
 			}
 		}
+		
+		console.printf("%.2fx speed", mod > 0 ? 1 / mod : 0);
 	}
 }

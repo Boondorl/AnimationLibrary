@@ -1,4 +1,4 @@
-version "2.4"
+version "4.7"
 
 #include "animate/animation.zs"
 #include "animate/example.zs"

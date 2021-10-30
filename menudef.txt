@@ -1,0 +1,11 @@
+AddOptionMenu "OptionsMenu"
+{
+	Submenu "Animation Modifier Options", "AnimationOptions"
+}
+
+OptionMenu "AnimationOptions"
+{
+	Title "Animation Modifier Options"
+	
+	Slider "Animation Time Modifier", "us_modifier", 0, 3, 0.5, 2
+}

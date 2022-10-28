@@ -2,11 +2,12 @@ class AnimationLayer : Object play
 {
 	int id;
 	Actor owner;
-	PSprite psp;
+	int pspID;
 	
 	double modifier;
 	State start;
 	int tics;
+	bool bSetModifier;
 	
 	int timer;
 	double roundUp;
@@ -21,15 +22,22 @@ class AnimationLayer : Object play
 		roundUp = 0;
 	}
 	
-	void SetModifier(double mod, State start = null)
+	void SetModifier(double mod, State s = null)
 	{
 		Reset();
 		
-		State thisState = start;
+		State thisState = s;
 		if (!thisState)
 		{
-			if (psp)
-				thisState = psp.CurState;
+			if (pspID)
+			{
+				if (owner.player)
+				{
+					let psp = owner.player.FindPSprite(pspID);
+					if (psp)
+						thisState = psp.CurState;
+				}
+			}
 			else
 				thisState = owner.CurState;
 		}
@@ -43,6 +51,7 @@ class AnimationLayer : Object play
 		modifier = mod;
 		start = thisState;
 		tics = Animation.GetSequenceLength(thisState);
+		bSetModifier = true;
 	}
 	
 	void ChangeModifier(double mod)
@@ -58,12 +67,23 @@ class AnimationLayer : Object play
 	
 	bool Modify()
 	{
+		bSetModifier = false;
 		if (modifier ~== 1)
 			return true;
 			
 		State thisState;
-		if (psp)
-			thisState = psp.CurState;
+		PSprite psp;
+		if (pspID)
+		{
+			if (owner.player)
+				psp = owner.player.FindPSprite(pspID);
+		}
+		
+		if (pspID)
+		{
+			if (psp)
+				thisState = psp.CurState;
+		}
 		else
 			thisState = owner.CurState;
 		
@@ -119,14 +139,14 @@ class AnimationLayer : Object play
 		
 		if (modifier > 1)
 		{
-			if (psp)
+			if (pspID)
 				psp.tics += mod;
 			else
 				owner.tics += mod;
 		}
 		else
 		{
-			if (psp)
+			if (pspID)
 			{
 				if (psp.tics > mod)
 					psp.tics -= mod;
@@ -144,7 +164,8 @@ class AnimationLayer : Object play
 							psp.SetState(psp.CurState.NextState);
 							if (!psp || !ContinueAnimating(psp.CurState, prev))
 							{
-								Reset();
+								if (!bSetModifier)
+									Reset();
 								return false;
 							}
 						}
@@ -168,7 +189,8 @@ class AnimationLayer : Object play
 							State prev = owner.CurState;
 							if (!owner.SetState(owner.CurState.NextState) || !ContinueAnimating(owner.CurState, prev))
 							{
-								Reset();
+								if (!bSetModifier)
+									Reset();
 								return false;
 							}
 						}
@@ -190,7 +212,7 @@ struct Animation play
 {
 	Array<AnimationLayer> layers;
 	
-	AnimationLayer CreateLayer(Actor owner, int id, PSprite psp = null)
+	AnimationLayer CreateLayer(Actor owner, int id, int pspID = 0)
 	{
 		// Layer already exists
 		let layer = FindLayer(id);
@@ -203,7 +225,7 @@ struct Animation play
 		
 		layer.owner = owner;
 		layer.id = id;
-		layer.psp = psp;
+		layer.pspID = pspID;
 		
 		layer.Reset();
 		layers.Push(layer);
@@ -237,7 +259,7 @@ struct Animation play
 		return layers.Size();
 	}
 	
-	static int GetSequenceLength(State start, State end = null)
+	clearscope static int GetSequenceLength(State start, State end = null)
 	{
 		if (!start || start == end)
 			return 0;

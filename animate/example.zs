@@ -59,14 +59,18 @@ class AnimMod : Inventory
 				for (uint i = 1; i < anim.Count(); ++i)
 				{
 					let layer = anim.layers[i];
-					if (!layer || !layer.psp)
+					if (!layer || !layer.pspID)
 						continue;
-						
-					if (CheckNewSequence(layer.psp.curState, prevStates[i]))
+					
+					let psp = owner.player.FindPSprite(layer.pspID);
+					if (!psp)
+						continue;
+
+					if (CheckNewSequence(psp.curState, prevStates[i]))
 						layer.SetModifier(modifier);
 						
-					if (layer.Modify() && layer.psp)
-						prevStates[i] = layer.psp.CurState;
+					if (layer.Modify() && psp)
+						prevStates[i] = psp.CurState;
 					
 					UpdatePSprites();
 				}
@@ -83,7 +87,7 @@ class AnimMod : Inventory
 		{
 			if (!anim.FindLayer(pspr.id))
 			{
-				anim.CreateLayer(owner, pspr.id, pspr);
+				anim.CreateLayer(owner, pspr.id, pspr.id);
 				prevStates.Push(null);
 			}
 			
@@ -95,7 +99,7 @@ class AnimMod : Inventory
 	{
 		for (uint i = 1; i < anim.Count(); ++i)
 		{
-			if (anim.layers[i] && !anim.layers[i].psp)
+			if (anim.layers[i] && anim.layers[i].pspID && !owner.player.FindPSprite(anim.layers[i].pspID))
 			{
 				anim.RemoveLayer(anim.layers[i].id);
 				prevStates.Delete(i--);

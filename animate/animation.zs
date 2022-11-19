@@ -1,16 +1,16 @@
-class AnimationLayer : Object play
+class AnimationLayer play
 {
-	int id;
-	Actor owner;
-	int pspID;
+	private int id;
+	private Actor owner;
+	private int pspID;
 	
-	double modifier;
-	State start;
-	int tics;
-	bool bSetModifier;
+	private double modifier;
+	private State start;
+	private int tics;
+	private bool bSetModifier;
 	
-	int timer;
-	double roundUp;
+	private int timer;
+	private double roundUp;
 	
 	void Reset()
 	{
@@ -25,18 +25,18 @@ class AnimationLayer : Object play
 	void SetModifier(double mod, State s = null)
 	{
 		Reset();
+
+		if (!owner)
+			return;
 		
 		State thisState = s;
 		if (!thisState)
 		{
 			if (pspID)
 			{
-				if (owner.player)
-				{
-					let psp = owner.player.FindPSprite(pspID);
-					if (psp)
-						thisState = psp.CurState;
-				}
+				let psp = GetPSprite();
+				if (psp)
+					thisState = psp.CurState;
 			}
 			else
 				thisState = owner.CurState;
@@ -68,6 +68,10 @@ class AnimationLayer : Object play
 	bool Modify()
 	{
 		bSetModifier = false;
+
+		if (!owner || owner.IsFrozen())
+			return false;
+
 		if (modifier ~== 1)
 			return true;
 			
@@ -75,20 +79,14 @@ class AnimationLayer : Object play
 		PSprite psp;
 		if (pspID)
 		{
-			if (owner.player)
-				psp = owner.player.FindPSprite(pspID);
-		}
-		
-		if (pspID)
-		{
+			psp = GetPSprite();
 			if (psp)
 				thisState = psp.CurState;
 		}
 		else
 			thisState = owner.CurState;
 		
-		// Don't modify if the owner is frozen or time timer is still ticking
-		if (!thisState || thisState.tics == -1 || owner.IsFrozen())
+		if (!thisState || thisState.tics == -1)
 			return false;
 		
 		if (--timer > 0)
@@ -206,57 +204,288 @@ class AnimationLayer : Object play
 	{
 		return current && current.tics != -1 && current != start && (!prev || prev.DistanceTo(current) == 1);
 	}
+
+	clearscope bool Matches(int i) const
+	{
+		return id == i;
+	}
+
+	clearscope PSprite GetPSprite() const
+	{
+		if (!pspID || !owner || !owner.player || owner.player.mo != owner)
+			return null;
+
+		return owner.player.FindPSprite(pspID);
+	}
+
+	static AnimationLayer Create(Actor owner, int id, int pspID = 0)
+	{
+		if (!owner)
+			return null;
+
+		let layer = new("AnimationLayer");
+
+		layer.owner = owner;
+		layer.id = id;
+		layer.pspID = pspID;
+
+		layer.Reset();
+
+		return layer;
+	}
+}
+
+enum EPSpriteFlags
+{
+	PSPF_NONE = 0,
+	PSPF_WEAPONS = 1,
+	PSPF_CUSTOM_INVENTORY = 1<<1,
+	PSPF_OTHER = 1<<2,
+
+	PSPF_OVERLAY = PSPF_WEAPONS|PSPF_CUSTOM_INVENTORY,
+	PSPF_ALL = PSPF_OVERLAY|PSPF_OTHER
+}
+
+class AnimationInfo
+{
+	private Actor owner;
+
+	Array<AnimationLayer> layers;
+
+	void CleanUpLayers(bool checkPSprite = true)
+	{
+		bool player = IsPlayer();
+
+		for (uint i = 0; i < layers.Size(); ++i)
+		{
+			if (!layers[i]
+				|| (checkPSprite && player && !layers[i].GetPSprite()))
+			{
+				layers.Delete(i--);
+			}
+		}
+	}
+
+	Actor GetOwner() const
+	{
+		return owner;
+	}
+
+	bool Matches(Actor mo) const
+	{
+		return owner == mo;
+	}
+
+	bool LayerMatches(uint index, int id) const
+	{
+		if (index >= layers.Size() || !layers[index])
+			return false;
+
+		return layers[index].Matches(id);
+	}
+
+	bool IsPlayer() const
+	{
+		return owner && owner.player;
+	}
+
+	uint Size() const
+	{
+		return layers.Size();
+	}
+
+	static AnimationInfo Create(Actor owner)
+	{
+		if (!owner)
+			return null;
+
+		let ai = new("AnimationInfo");
+		ai.owner = owner;
+
+		return ai;
+	}
 }
 
 struct Animation play
 {
-	Array<AnimationLayer> layers;
+	Array<AnimationInfo> actors;
 	
-	AnimationLayer CreateLayer(Actor owner, int id, int pspID = 0)
+	AnimationLayer, AnimationInfo CreateLayer(Actor owner, int id, int pspID = 0)
 	{
-		// Layer already exists
-		let layer = FindLayer(id);
-		if (layer)
-			return layer;
-			
-		layer = new("AnimationLayer");
-		if (!layer)
+		if (!owner)
 			return null;
+
+		AnimationLayer layer;
+		AnimationInfo ai;
+		[layer, ai] = FindLayer(owner, id);
+		if (layer)
+			return layer, ai;
 		
-		layer.owner = owner;
-		layer.id = id;
-		layer.pspID = pspID;
-		
-		layer.Reset();
-		layers.Push(layer);
+		layer = AnimationLayer.Create(owner, id, pspID);
+		if (layer)
+		{
+			if (!ai)
+				ai = AddActor(owner);
+			if (ai)
+				ai.layers.Push(layer);
+		}
 		
 		return layer;
 	}
-	
-	void RemoveLayer(int id)
+
+	AnimationInfo AddActor(Actor owner)
 	{
-		let layer = FindLayer(id);
-		if (layer)
+		if (!owner)
+			return null;
+
+		let ai = FindActor(owner);
+		if (!ai)
 		{
-			layers.Delete(layers.Find(layer));
-			layer.Destroy();
+			ai = AnimationInfo.Create(owner);
+			if (ai)
+				actors.Push(ai);
+		}
+
+		return ai;
+	}
+
+	void CleanUpLayers(Actor owner = null, bool checkLayers = true, bool checkPSprite = true)
+	{
+		for (uint i = 0; i < actors.Size(); ++i)
+		{
+			if (!actors[i])
+			{
+				actors.Delete(i--);
+				continue;
+			}
+
+			if (!checkLayers || (owner && !actors[i].Matches(owner)))
+				continue;
+
+			actors[i].CleanUpLayers(checkPSprite);
 		}
 	}
 	
-	AnimationLayer FindLayer(int id)
+	void RemoveLayers(int id, Actor owner = null)
 	{
-		for (uint i = 0; i < Count(); ++i)
+		for (uint i = 0; i < actors.Size(); ++i)
 		{
-			if (layers[i] && layers[i].id == id)
-				return layers[i];
+			if (!actors[i] || (owner && !actors[i].Matches(owner)))
+				continue;
+
+			for (uint j = 0; j < actors[i].Size(); ++j)
+			{
+				if (actors[i].LayerMatches(j, id))
+					actors[i].layers.Delete(j--);
+			}
 		}
-		
+	}
+
+	void ModifyLayers(Actor owner = null, EPSpriteFlags pspFlags = PSPF_NONE)
+	{
+		for (uint i = 0; i < actors.Size(); ++i)
+		{
+			if (!actors[i] || (owner && !actors[i].Matches(owner)))
+				continue;
+
+			let mo = actors[i].GetOwner();
+			AddPSprites(mo, pspFlags);
+
+			for (uint j = 0; j < actors[i].Size(); ++j)
+			{
+				if (actors[i].layers[j])
+					actors[i].layers[j].Modify();
+
+				if (!mo)
+					break;
+
+				AddPSprites(mo, pspFlags);
+			}
+		}
+
+		CleanUpLayers();
+	}
+
+	void AddPSprites(Actor owner, EPSpriteFlags pspFlags)
+	{
+		if (pspFlags == PSPF_NONE || !owner || !owner.player || owner.player.mo != owner)
+			return;
+
+		let psp = owner.player.psprites;
+		while (psp)
+		{
+			if (((pspFlags & PSPF_WEAPONS) && psp.caller is "Weapon")
+				|| ((pspFlags & PSPF_CUSTOM_INVENTORY) && psp.caller is "CustomInventory")
+				|| ((pspFlags & PSPF_OTHER) && !(psp.caller is "StateProvider")))
+			{
+				CreateLayer(owner, psp.id, psp.id);
+			}
+
+			psp = psp.next;
+		}
+	}
+
+	clearscope AnimationInfo FindActor(Actor owner) const
+	{
+		if (!owner)
+			return null;
+
+		for (uint i = 0; i < actors.Size(); ++i)
+		{
+			if (actors[i] && actors[i].Matches(owner))
+				return actors[i];
+		}
+
 		return null;
 	}
 	
-	uint Count()
+	clearscope AnimationLayer, AnimationInfo FindLayer(Actor owner, int id) const
 	{
-		return layers.Size();
+		let ai = FindActor(owner);
+		if (!ai)
+			return null, null;
+
+		for (uint i = 0; i < ai.Size(); ++i)
+		{
+			if (ai.LayerMatches(i, id))
+				return ai.layers[i], ai;
+		}
+		
+		return null, ai;
+	}
+
+	clearscope void FindLayers(int id, out Array<AnimationLayer> layers) const
+	{
+		layers.Clear();
+
+		for (uint i = 0; i < actors.Size(); ++i)
+		{
+			if (!actors[i])
+				continue;
+			
+			for (uint j = 0; j < actors[i].Size(); ++j)
+			{
+				if (actors[i].LayerMatches(j, id))
+					layers.Push(actors[i].layers[j]);
+			}
+		}
+	}
+	
+	clearscope uint ActorCount() const
+	{
+		return actors.Size();
+	}
+
+	clearscope uint LayerCount() const
+	{
+		uint total;
+		for (uint i = 0; i < actors.Size(); ++i)
+		{
+			if (actors[i])
+				total += actors[i].Size();
+		}
+
+		return total;
 	}
 	
 	clearscope static int GetSequenceLength(State start, State end = null)

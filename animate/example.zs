@@ -1,5 +1,7 @@
 class AnimMod : Inventory
 {
+	const LAYER_MAIN = 0;
+
 	private Array<State> prevStates;
 	
 	Animation anim;
@@ -15,6 +17,8 @@ class AnimMod : Inventory
 		+SYNCHRONIZED
 		+NOBLOCKMAP
 		+NOSECTOR
+		+DONTBLAST
+		+NOTONAUTOMAP
 		+INVENTORY.UNDROPPABLE
 	}
 	
@@ -27,84 +31,57 @@ class AnimMod : Inventory
 	override void BeginPlay()
 	{
 		modifier = 1;
+		prevStates.Push(null);
 	}
 	
-	// Custom loop that changes animations at all times
 	override void DoEffect()
 	{
 		if (!owner)
 			return;
-			
-		AnimationLayer main = anim.FindLayer(0);
+		
+		AnimationLayer main;
+		AnimationInfo ai;
+		[main, ai] = anim.CreateLayer(owner, LAYER_MAIN);
 		if (!main)
-		{
-			main = anim.CreateLayer(owner, 0);
-			prevStates.Push(null);
-		}
+			return;
 			
 		if (CheckNewSequence(owner.curState, prevStates[0]))
 			main.SetModifier(modifier);
-			
-		bool res = main.Modify();
 		
-		if (owner)
-		{
-			if (res)
-				prevStates[0] = owner.curState;
-		
-			if (owner.player)
-			{
-				UpdatePSprites();
-				
-				for (uint i = 1; i < anim.Count(); ++i)
-				{
-					let layer = anim.layers[i];
-					if (!layer || !layer.pspID)
-						continue;
-					
-					let psp = owner.player.FindPSprite(layer.pspID);
-					if (!psp)
-						continue;
+		if (main.Modify())
+			prevStates[0] = owner.curState;
 
-					if (CheckNewSequence(psp.curState, prevStates[i]))
-						layer.SetModifier(modifier);
-						
-					if (layer.Modify() && psp)
-						prevStates[i] = psp.CurState;
-					
-					UpdatePSprites();
-				}
-				
-				RemovePSprites();
-			}
-		}
-	}
-	
-	private void UpdatePSprites()
-	{
-		let pspr = owner.player.psprites;
-		while (pspr)
+		if (owner.bDestroyed)
+			return;
+
+		console.printf("%d", ai.Size());
+
+		/*if (owner.player && owner.player.mo == owner)
 		{
-			if (!anim.FindLayer(pspr.id))
+			anim.AddPSprites(owner, PSPF_ALL);
+			for (uint i = 0; i < ai.Size(); ++i)
 			{
-				anim.CreateLayer(owner, pspr.id, pspr.id);
-				prevStates.Push(null);
+				if (!ai.layers[i])
+					continue;
+
+				let psp = ai.layers[i].GetPSprite();
+				if (!psp)
+					continue;
+
+				if (i >= prevStates.Size())
+					prevStates.Push(null);
+
+				if (CheckNewSequence(psp.curState, prevStates[i]))
+					ai.layers[i].SetModifier(modifier);
+
+				if (ai.layers[i].Modify() && psp)
+					prevStates[i] = psp.curState;
+
+				anim.AddPSprites(owner, PSPF_ALL);
 			}
-			
-			pspr = pspr.next;
-		}
-	}
+		}*/
 	
-	private void RemovePSprites()
-	{
-		for (uint i = 1; i < anim.Count(); ++i)
-		{
-			if (anim.layers[i] && anim.layers[i].pspID && !owner.player.FindPSprite(anim.layers[i].pspID))
-			{
-				anim.RemoveLayer(anim.layers[i].id);
-				prevStates.Delete(i--);
-			}
-		}
+		anim.CleanUpLayers();
 	}
 	
 	private bool CheckNewSequence(State cur, State prev)
@@ -119,13 +96,11 @@ class AnimMod : Inventory
 class TestHandler : EventHandler
 {
 	private Array<AnimMod> mods;
-	private transient CVar svMod;
 	private double prevMod;
 	
 	override void OnRegister()
 	{
-		svMod = CVar.GetCVar("us_modifier");
-		prevMod = svMod.GetFloat();
+		prevMod = us_modifier;
 	}
 	
 	override void WorldThingSpawned(WorldEvent e)
@@ -136,10 +111,7 @@ class TestHandler : EventHandler
 			let am = AnimMod(e.thing.FindInventory("AnimMod"));
 			if (am)
 			{
-				if (!svMod)
-					svMod = CVar.GetCVar("us_modifier");
-				
-				am.modifier = svMod.GetFloat();
+				am.modifier = us_modifier;
 				mods.Push(am);
 			}
 		}
@@ -154,14 +126,10 @@ class TestHandler : EventHandler
 	
 	override void WorldTick()
 	{
-		if (!svMod)
-			svMod = CVar.GetCVar("us_modifier");
+		if (!(us_modifier ~== prevMod))
+			UpdateModifiers(us_modifier);
 		
-		double modifier = svMod.GetFloat();
-		if (!(modifier ~== prevMod))
-			UpdateModifiers(modifier);
-		
-		prevMod = modifier;	
+		prevMod = us_modifier;	
 	}
 	
 	private void UpdateModifiers(double mod)
@@ -173,10 +141,13 @@ class TestHandler : EventHandler
 				continue;
 			
 			a.modifier = mod;
-			for (uint j = 0; j < a.anim.Count(); ++j)
+			for (uint j = 0; j < a.anim.ActorCount(); ++j)
 			{
-				if (a.anim.layers[j])
-					a.anim.layers[j].ChangeModifier(a.modifier);
+				for (uint k = 0; k < a.anim.actors[j].Size(); ++k)
+				{
+					if (a.anim.actors[j].layers[k])
+						a.anim.actors[j].layers[k].ChangeModifier(a.modifier);
+				}
 			}
 		}
 		

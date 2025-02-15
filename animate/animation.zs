@@ -313,7 +313,7 @@ struct Animation play
 	AnimationLayer, AnimationInfo CreateLayer(Actor owner, int id, int pspID = 0)
 	{
 		if (!owner)
-			return null;
+			return null, null;
 
 		AnimationLayer layer;
 		AnimationInfo ai;
@@ -330,7 +330,7 @@ struct Animation play
 				ai.layers.Push(layer);
 		}
 		
-		return layer;
+		return layer, ai;
 	}
 
 	AnimationInfo AddActor(Actor owner)
